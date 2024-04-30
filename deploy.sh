@@ -530,23 +530,9 @@ install_lets_encrypt(){
 install_docker() {
 	if [ -e /etc/redhat-release ];then
 		if [ -n "`which docker 2>&1 | grep "no docker"`" ];then
-			yum install -y yum-utils device-mapper-persistent-data lvm2
-			yum-config-manager --add-repo http://download.docker.com/linux/centos/docker-ce.repo
-			yum list docker-ce --showduplicates | sort -r
-			list=`yum list docker-ce --showduplicates | sort -r`
-			read -p "Select the version from above you want to install: " version
-			echo $version
-			while true
-			do
-				if [ -z $version ];then
-					read -p "Please select the version: " version
-				elif [[ -z "`echo $list | grep $version`" ]];then
-					read -p "Version not found, reselect one: " version
-				else
-					break
-				fi
-			done
-			yum -y install docker-ce-$version
+			yum install -y yum-utils
+			yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+			yum install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 			if [ -z "`which docker 2>&1 | grep "no docker"`" ];then
 				systemctl enable docker
 				systemctl start docker
@@ -555,29 +541,21 @@ install_docker() {
 			else
 				echo "Install Docker Failed!"
 			fi
-			# TODO match docker and docker-compose version and install
 		else
 			echo "Docker has been installed."
 		fi
 	elif [ -e /etc/lsb-release ]; then
 		if [ -z "`which docker`" ];then
-			apt update -y
-			apt install -y ca-certificates curl gnupg lsb-release
-			mkdir -p /etc/apt/keyrings
-			curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-			arch=`arch`
-			if [[ $arch == "x86_64" ]];then
-				arch2="amd64"
-			elif [[ $arch == "arm64" || $arch == "ARM64" ]];then
-				arch2="arm64"
-			elif [[ $arch == "x86" ]];then
-				echo "No Support x86 arch"
-				return
-			fi
-			codename=`cat /etc/os-release | grep VERSION_CODENAME= | awk -F '=' '{print $2}' | sed 's/"//g'`
-			echo "deb [arch=$arch2 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $codename stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-			apt update -y
-			apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+			apt -y update
+            apt install ca-certificates curl
+            install -m 0755 -d /etc/apt/keyrings
+            curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+            chmod a+r /etc/apt/keyrings/docker.asc
+            echo \
+              "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+              $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+            apt -y update
+			apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 			if [ -n "`which docker`" ];then
 				echo "Install Docker Successfully!"
 			else
