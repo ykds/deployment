@@ -61,7 +61,7 @@ install_nginx(){
 		return
 	fi
 
-	# may need to delete `-Werror -g` option from `objs/Makefile` after ./configure step
+	# TODO may need to delete `-Werror -g` option from `objs/Makefile` after ./configure step
 	cd $dir && ./configure --with-http_ssl_module && make && make install
 
 	if [ -d /usr/local/nginx ];then
@@ -343,7 +343,7 @@ check_env(){
 	fi
 }
 
-run_service(){
+deploy_service(){
 	read -p "Enter the program dir: " dir
 	if [ -z $dir ];then
 		echo "program dir can not be empty."
@@ -480,16 +480,15 @@ install_go(){
 }
 
 install_lets_encrypt(){
-	if [ -n "`which certbot`" ];then
-		echo "certbot has been installed."
-		echo
-		echo -e "Usage:\n1. Generate Cert:\n\tcertbot certonly --nginx --nginx-ctl nginx-binary-path --nginx-server-root nginx-conf-path -d your-domain (save at /etc/letsencrypt/live)\n2.List All Cert:\n\tcertbot certificates\n3.Renew Cert:\n\tcertbot renew --nginx-ctl nginx-binary-path --cert-name cert-name / certbot renew"
-		return
-	fi
-
 	if [ -e /etc/redhat-release ];then
+		if [ -z "`which certbot 2>&1 | grep "no certbot"`" ];then
+			echo "certbot has been installed."
+			echo
+			echo -e "Usage:\n1. Generate Cert:\n\tcertbot certonly --nginx --nginx-ctl nginx-binary-path --nginx-server-root nginx-conf-path -d your-domain (save at /etc/letsencrypt/live)\n2.List All Cert:\n\tcertbot certificates\n3.Renew Cert:\n\tcertbot renew --nginx-ctl nginx-binary-path --cert-name cert-name / certbot renew"
+			return
+		fi
 		yum remove -y certbot
-		if [ -n "`which snap | grep "no snap"`" ];then
+		if [ -n "`which snap 2>&1 | grep "no snap"`" ];then
 			yum -y update
 			yum install -y epel-release > /dev/null
 			yum install snapd > /dev/null
@@ -497,6 +496,12 @@ install_lets_encrypt(){
 			ln -s /var/lib/snapd/snap /usr/bin/snap
 		fi
 	elif [ -e /etc/lsb-release ]; then
+		if [ -n "`which certbot`" ];then
+			echo "certbot has been installed."
+			echo
+			echo -e "Usage:\n1. Generate Cert:\n\tcertbot certonly --nginx --nginx-ctl nginx-binary-path --nginx-server-root nginx-conf-path -d your-domain (save at /etc/letsencrypt/live)\n2.List All Cert:\n\tcertbot certificates\n3.Renew Cert:\n\tcertbot renew --nginx-ctl nginx-binary-path --cert-name cert-name / certbot renew"
+			return
+		fi
 		apt remove -y certbot
 		if [ -n "`which dnf`" ];then
 			dnf remove -y certbot
@@ -522,6 +527,70 @@ install_lets_encrypt(){
 	echo -e "Usage:\n1. Generate Cert:\n\tcertbot certonly --nginx --nginx-ctl nginx-binary-path --nginx-server-root nginx-conf-path -d your-domain (save at /etc/letsencrypt/live)\n2.List All Cert:\n\tcertbot certificates\n3.Renew Cert:\n\tcertbot renew --nginx-ctl nginx-binary-path --cert-name cert-name / certbot renew"
 }
 
+install_docker() {
+	if [ -e /etc/redhat-release ];then
+		if [ -n "`which docker 2>&1 | grep "no docker"`" ];then
+			yum install -y yum-utils device-mapper-persistent-data lvm2
+			yum-config-manager --add-repo http://download.docker.com/linux/centos/docker-ce.repo
+			yum list docker-ce --showduplicates | sort -r
+			list=`yum list docker-ce --showduplicates | sort -r`
+			read -p "Select the version from above you want to install: " version
+			echo $version
+			while true
+			do
+				if [ -z $version ];then
+					read -p "Please select the version: " version
+				elif [[ -z "`echo $list | grep $version`" ]];then
+					read -p "Version not found, reselect one: " version
+				else
+					break
+				fi
+			done
+			yum -y install docker-ce-$version
+			if [ -z "`which docker 2>&1 | grep "no docker"`" ];then
+				systemctl enable docker
+				systemctl start docker
+				systemctl status docker
+				echo "Install Docker Successfully!"
+			else
+				echo "Install Docker Failed!"
+			fi
+			# TODO match docker and docker-compose version and install
+		else
+			echo "Docker has been installed."
+		fi
+	elif [ -e /etc/lsb-release ]; then
+		if [ -z "`which docker`" ];then
+			apt update -y
+			apt install -y ca-certificates curl gnupg lsb-release
+			mkdir -p /etc/apt/keyrings
+			curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+			arch=`arch`
+			if [[ $arch == "x86_64" ]];then
+				arch2="amd64"
+			elif [[ $arch == "arm64" || $arch == "ARM64" ]];then
+				arch2="arm64"
+			elif [[ $arch == "x86" ]];then
+				echo "No Support x86 arch"
+				return
+			fi
+			codename=`cat /etc/os-release | grep VERSION_CODENAME= | awk -F '=' '{print $2}' | sed 's/"//g'`
+			echo "deb [arch=$arch2 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $codename stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+			apt update -y
+			apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+			if [ -n "`which docker`" ];then
+				echo "Install Docker Successfully!"
+			else
+				echo "Install Docker Failed."
+			fi
+		else
+			echo "Docker has been installed."
+		fi
+	else
+		echo "Unknown OS"
+	fi
+}
+
 main() {
 	echo
 	echo "....... Environment Setup Script ......."
@@ -538,9 +607,11 @@ main() {
 	echo
 	echo "--------- 6. Let's Encrypt Only --------"
 	echo
-	echo "--------- 7. Run Service ---------------"
+	echo "--------- 7. Deploy Service ------------"
     echo
-	read -p "Please choose(1-7): " choose
+    echo "--------- 8. Docker --------------------"
+	echo
+	read -p "Please choose(1-8): " choose
 	echo
 	case $choose in
 	1)
@@ -570,7 +641,11 @@ main() {
 		exit 0
 		;;
 	7)
-		run_service
+		deploy_service
+		exit 0
+		;;
+	8)
+		install_docker
 		exit 0
 		;;
 	q)
