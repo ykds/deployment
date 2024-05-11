@@ -1,5 +1,17 @@
 #!/bin/bash
 
+sys_version=`cat /etc/os-release | grep VERSION_ID= | awk -F '=' '{print $2}' | sed 's/"//g'`
+
+if [ -e /etc/redhat-release ];then
+	distribution="redhat"
+elif [ -e /etc/lsb-release ]; then
+	distribution="ubuntu"
+else
+	distribution="unknown"
+fi
+
+arch=`arch`
+
 create_nginx_service(){
 	if [ ! -e /usr/lib/systemd/system/nginx.service ];then
 		cat <<EOF > /usr/lib/systemd/system/nginx.service 
@@ -103,17 +115,16 @@ install_mysql8_redhat(){
 		echo "Mysql8 has been installed."
 		return
 	fi
-	version=`cat /etc/os-release | grep VERSION_ID= | awk -F '=' '{print $2}' | sed 's/"//g'`
-	if [ $version == 6 ];then
+	if [ $sys_version == 6 ];then
 		filename="mysql80-community-release-el6-11.noarch.rpm"
-	elif [ $version == 7 ];then
+	elif [ $sys_version == 7 ];then
 		filename="mysql80-community-release-el7-11.noarch.rpm"
-	elif [ $version == 8 ];then
+	elif [ $sys_version == 8 ];then
 		filename="mysql80-community-release-el8-9.noarch.rpm"
-	elif [ $version == 9 ]; then
+	elif [ $sys_version == 9 ]; then
 		filename="mysql80-community-release-el9-5.noarch.rpm"
 	else
-		echo "Unsupported Version: $version"
+		echo "Unsupported Version: $sys_version"
 		return
 	fi
 	if [ ! -e $filename ];then
@@ -147,9 +158,9 @@ install_mysql8_redhat(){
 }
 
 install_mysql8(){
-	if [ -e /etc/redhat-release ];then
+	if [[ $distribution == "redhat" ]];then
 		install_mysql8_redhat
-	elif [ -e /etc/lsb-release ]; then
+	elif [[ $distribution == "ubuntu" ]]; then
 		install_mysql8_ubuntu
 	else
 		echo "Unknown OS"
@@ -237,11 +248,11 @@ install_redis(){
 
 install_supervisor(){
 	nopip3=true
-	if [ -e /etc/redhat-release ];then
+	if [[ $distribution == "redhat" ]];then
 		if [ -z "`which pip3 2>&1 | grep -o "no pip3"`" ];then
 			nopip3=false
 		fi
-	elif [ -e /etc/lsb-release ];then
+	elif [[ $distribution == "ubuntu" ]];then
 		if [ -n "`which pip3 2>&1`" ];then
 			nopip3=false
 		fi
@@ -303,7 +314,7 @@ install_supervisor(){
 
 check_env(){
   	export PAGER=
-	if [ -e /etc/redhat-release ];then
+	if [[ $distrubution == "redhat" ]];then
 		yum -y update
 		if [ -n "`rpm -q openssl-devel | grep "is not installed"`" ];then
 			yum install -y openssl-devel openssl
@@ -320,7 +331,7 @@ check_env(){
 		if [ -n "`rpm -q pcre-devel | grep "is not installed"`" ];then
 			yum install -y pcre-devel
 		fi
-	elif [ -e /etc/lsb-release ]; then
+	elif [[ $distrubution == "ubuntu" ]]; then
 		apt -y update
 		if [ -z "`dpkg -l | grep build-essential`" ];then
 				apt install -y build-essential
@@ -362,7 +373,7 @@ deploy_service(){
 		return
 	fi
 
-	read -p "Enter the server name [default:localhost]: " server_name
+	read -p "Enter the server name, that is domain [default:localhost]: " server_name
 	if [ -z $server_name ];then
 		server_name="localhost"
 	fi
@@ -430,7 +441,6 @@ install_go(){
 	if [ -z $version ];then
 		version="1.22.2"
 	fi
-	arch=`arch`
 	if [[ $arch == "x86_64" ]];then
 		arch2="amd64"
 	elif [[ $arch == "arm64" || $arch == "ARM64" ]];then
@@ -480,7 +490,7 @@ install_go(){
 }
 
 install_lets_encrypt(){
-	if [ -e /etc/redhat-release ];then
+	if [[ $distrubution == "redhat" ]];then
 		if [ -z "`which certbot 2>&1 | grep "no certbot"`" ];then
 			echo "certbot has been installed."
 			echo
@@ -495,7 +505,7 @@ install_lets_encrypt(){
 			systemctl enable --now snapd.socket
 			ln -s /var/lib/snapd/snap /usr/bin/snap
 		fi
-	elif [ -e /etc/lsb-release ]; then
+	elif [[ $distrubution == "ubuntu" ]]; then
 		if [ -n "`which certbot`" ];then
 			echo "certbot has been installed."
 			echo
@@ -528,7 +538,7 @@ install_lets_encrypt(){
 }
 
 install_docker() {
-	if [ -e /etc/redhat-release ];then
+	if [[ $distrubution == "redhat" ]];then
 		if [ -n "`which docker 2>&1 | grep "no docker"`" ];then
 			yum install -y yum-utils
 			yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
@@ -544,7 +554,7 @@ install_docker() {
 		else
 			echo "Docker has been installed."
 		fi
-	elif [ -e /etc/lsb-release ]; then
+	elif [[ $distrubution == "ubuntu" ]]; then
 		if [ -z "`which docker`" ];then
 			apt -y update
             apt install ca-certificates curl
@@ -569,6 +579,52 @@ install_docker() {
 	fi
 }
 
+install_jenkins() {
+	if [[ $distribution == "redhat" ]];then
+		sudo wget -O /etc/yum.repos.d/jenkins.repo \
+            https://pkg.jenkins.io/redhat-stable/jenkins.repo
+        sudo rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
+        sudo yum -y upgrade
+        sudo yum install -y fontconfig java-17-openjdk
+        sudo yum install -y jenkins
+        sudo systemctl daemon-reload
+    elif [[ $distribution == "ubuntu" ]];then
+		wget -O /usr/share/keyrings/jenkins-keyring.asc \
+	  https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
+		echo "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc]" \
+	  https://pkg.jenkins.io/debian-stable binary/ | tee \
+	  /etc/apt/sources.list.d/jenkins.list > /dev/null
+		apt-get update -y
+		apt-get install -y fontconfig openjdk-17-jre
+		apt-get install -y jenkins
+	fi
+}
+
+install_postgres() {
+	read -p "Enter the version you want to install [default:16]" version
+	if [ -z $version ];then
+		version=16
+	fi
+	if [[ $distribution == "ubuntu" ]]; then
+		apt install -y postgresql
+	elif [[ $distribution == "redhat" ]];then
+		if [[ $arch == "x86" ]];then
+			arch="i386"
+		fi
+		yum install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-${sys_version}-${arch}/pgdg-redhat-repo-latest.noarch.rpm
+		yum install -y postgresql16-server
+		if [[ $sys_version == 6 ]];then
+			service postgresql-${version} initdb
+            chkconfig postgresql-${version} on
+            service postgresql-${version} start
+        else
+			/usr/pgsql-${version}/bin/postgresql-${version}-setup initdb
+			systemctl enable postgresql-${version}
+			systemctl start postgresql-${version}
+		fi
+	fi
+}
+
 main() {
 	echo
 	echo "....... Environment Setup Script ......."
@@ -586,10 +642,14 @@ main() {
 	echo "--------- 6. Let's Encrypt Only --------"
 	echo
 	echo "--------- 7. Deploy Service ------------"
-    echo
-    echo "--------- 8. Docker --------------------"
 	echo
-	read -p "Please choose(1-8): " choose
+	echo "--------- 8. Docker --------------------"
+	echo
+	echo "--------- 9. Jenkins -------------------"
+	echo
+	echo "--------- 10. Postgres -----------------"
+	echo
+	read -p "Please choose(1-10): " choose
 	echo
 	case $choose in
 	1)
@@ -624,6 +684,14 @@ main() {
 		;;
 	8)
 		install_docker
+		exit 0
+		;;
+	9)
+		install_jenkins
+		exit 0
+		;;
+	10)
+		install_postgres
 		exit 0
 		;;
 	q)
