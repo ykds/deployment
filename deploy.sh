@@ -221,10 +221,16 @@ install_redis(){
 		tar -xzvf $filename
 	fi
 
+	if [[ $distribution == "ubuntu" ]];then
+		apt install -y make gcc pkg-config
+	elif [[ $distribution == "redhat" ]];then
+		yum install -y make gcc
+	fi
+
 	if [[ -n $tls && $tls == "yes" ]]; then
-		cd $dir && make BUILD_TLS=yes && make install && cd - >> /dev/null
+		cd $dir && make distclean && make BUILD_TLS=yes && make install && cd - >> /dev/null
 	else
-		cd $dir && make && make install && cd - >> /dev/null
+		cd $dir && make distclean && make && make install && cd - >> /dev/null
 	fi
 
 	if [ -e /usr/local/bin/redis-server ];then
@@ -314,8 +320,8 @@ install_supervisor(){
 
 check_env(){
   	export PAGER=
-	if [[ $distrubution == "redhat" ]];then
-		yum -y update
+	if [[ $distribution == "redhat" ]];then
+		yum update -y
 		if [ -n "`rpm -q openssl-devel | grep "is not installed"`" ];then
 			yum install -y openssl-devel openssl
 		fi
@@ -331,8 +337,8 @@ check_env(){
 		if [ -n "`rpm -q pcre-devel | grep "is not installed"`" ];then
 			yum install -y pcre-devel
 		fi
-	elif [[ $distrubution == "ubuntu" ]]; then
-		apt -y update
+	elif [[ $distribution == "ubuntu" ]]; then
+		apt update -y
 		if [ -z "`dpkg -l | grep build-essential`" ];then
 				apt install -y build-essential
 			fi
@@ -451,14 +457,17 @@ install_go(){
 	echo
 	dir="go${version}"
 	filename="go${version}.linux-${arch2}.tar.gz"
-	url="https://go.dev/dl/$filename"
-	if [ ! -d $dir ];then
-		if [ ! -e $filename ];then
-			wget -O $filename $url
-		fi
-		if [ ! -e $filename ];then
-			echo "wget $filename from $url failed."
-			return
+
+	if [ ! -e $filename ];then
+		url="https://go.dev/dl/$filename"
+		if [ ! -d $dir ];then
+			if [ ! -e $filename ];then
+				wget -O $filename $url
+			fi
+			if [ ! -e $filename ];then
+				echo "wget $filename from $url failed."
+				return
+			fi
 		fi
 	fi
 
@@ -472,11 +481,14 @@ install_go(){
 		  mkdir -p $dir
 		  tar -C $dir -zxvf $filename
 		fi
+	else
+		dir=/usr/local
+		tar -C $dir -zxvf $filename
+	fi
 
-		if [ -z "`cat ~/.bashrc | grep "go/bin"`" ];then
-		  echo "PATH=\$PATH:$dir/go/bin" >> ~/.bashrc
-		  source ~/.bashrc
-		fi
+	if [ -z "`cat ~/.bashrc | grep "go/bin"`" ];then
+		echo "PATH=\$PATH:$dir/go/bin" >> ~/.bashrc
+		source ~/.bashrc
 	fi
 
 	if [ -n "`go version | grep -o "go version"`" ];then
@@ -490,7 +502,7 @@ install_go(){
 }
 
 install_lets_encrypt(){
-	if [[ $distrubution == "redhat" ]];then
+	if [[ $distribution == "redhat" ]];then
 		if [ -z "`which certbot 2>&1 | grep "no certbot"`" ];then
 			echo "certbot has been installed."
 			echo
@@ -499,13 +511,13 @@ install_lets_encrypt(){
 		fi
 		yum remove -y certbot
 		if [ -n "`which snap 2>&1 | grep "no snap"`" ];then
-			yum -y update
+			yum update -y
 			yum install -y epel-release > /dev/null
 			yum install snapd > /dev/null
 			systemctl enable --now snapd.socket
 			ln -s /var/lib/snapd/snap /usr/bin/snap
 		fi
-	elif [[ $distrubution == "ubuntu" ]]; then
+	elif [[ $distribution == "ubuntu" ]]; then
 		if [ -n "`which certbot`" ];then
 			echo "certbot has been installed."
 			echo
@@ -517,7 +529,7 @@ install_lets_encrypt(){
 			dnf remove -y certbot
 		fi
 		if [ -z "`which snap`" ];then
-			apt -y update
+			apt update -y
 			apt install snapd
 		fi
 	else
@@ -538,7 +550,7 @@ install_lets_encrypt(){
 }
 
 install_docker() {
-	if [[ $distrubution == "redhat" ]];then
+	if [[ $distribution == "redhat" ]];then
 		if [ -n "`which docker 2>&1 | grep "no docker"`" ];then
 			yum install -y yum-utils
 			yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
@@ -554,17 +566,17 @@ install_docker() {
 		else
 			echo "Docker has been installed."
 		fi
-	elif [[ $distrubution == "ubuntu" ]]; then
+	elif [[ $distribution == "ubuntu" ]]; then
 		if [ -z "`which docker`" ];then
-			apt -y update
-            apt install ca-certificates curl
+			apt update  -y
+            apt install -y ca-certificates curl
             install -m 0755 -d /etc/apt/keyrings
             curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
             chmod a+r /etc/apt/keyrings/docker.asc
             echo \
               "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
               $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-            apt -y update
+            apt update -y
 			apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 			if [ -n "`which docker`" ];then
 				echo "Install Docker Successfully!"
@@ -584,7 +596,7 @@ install_jenkins() {
 		sudo wget -O /etc/yum.repos.d/jenkins.repo \
             https://pkg.jenkins.io/redhat-stable/jenkins.repo
         sudo rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
-        sudo yum -y upgrade
+        sudo yum upgrade -y
         sudo yum install -y fontconfig java-17-openjdk
         sudo yum install -y jenkins
         sudo systemctl daemon-reload
@@ -594,9 +606,9 @@ install_jenkins() {
 		echo "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc]" \
 	  https://pkg.jenkins.io/debian-stable binary/ | tee \
 	  /etc/apt/sources.list.d/jenkins.list > /dev/null
-		apt-get update -y
-		apt-get install -y fontconfig openjdk-17-jre
-		apt-get install -y jenkins
+		apt update -y
+		apt install -y fontconfig openjdk-17-jre
+		apt install -y jenkins
 	fi
 }
 
@@ -625,31 +637,104 @@ install_postgres() {
 	fi
 }
 
+install_gitlab() {
+	read -p "Install or Uninstall ? [1:I 2:U] " op
+	if [ -z $op ];then
+		return
+	elif [[ $op == 1 ]];then
+		read -p "Enter the domain to visit GitLab: " domain
+        	if [ -z $domain ]; then
+        		echo "domain is required"
+        	fi
+        	if [[ $distribution == "ubuntu" ]];then
+        		apt update -y
+        		apt install -y curl openssh-server ca-certificates tzdata perl
+        		apt install -y postfix
+        		curl https://packages.gitlab.com/install/repositories/gitlab/gitlab-ee/script.deb.sh | bash
+        		EXTERNAL_URL=${domain} apt install -y gitlab-ee
+        		apt-mark hold gitlab-ee
+        	elif [[ $distribution == "redhat" ]];then
+        		yum install postfix -y
+        		systemctl enable postfix
+        		systemctl start postfix
+        		curl https://packages.gitlab.com/install/repositories/gitlab/gitlab-ee/script.rpm.sh | bash
+        		EXTERNAL_URL=${domain} yum install -y gitlab-ee
+        	fi
+
+        	# 安装 gitlab-runner
+        	if [[ $arch == "x86_64" ]];then
+            		arch2="amd64"
+			elif [[ $arch == "arm64" || $arch == "ARM64" ]];then
+				arch2="arm64"
+			elif [[ $arch == "x86" ]];then
+				arch2="386"
+			fi
+			curl -L --output /usr/local/bin/gitlab-runner https://gitlab-runner-downloads.s3.amazonaws.com/latest/binaries/gitlab-runner-linux-${arch2}
+			chmod +x /usr/local/bin/gitlab-runner
+			useradd --comment 'GitLab Runner' --create-home gitlab-runner --shell /bin/bash
+			gitlab-runner install --user=gitlab-runner --working-directory=/home/gitlab-runner
+			gitlab-runner start
+                
+        	pass=`cat /etc/gitlab/initial_root_password | grep Password: | awk -F' ' '{print $2}'`
+        	if [ -n $pass ];then
+        		echo "Install successfully, password is $pass"
+        	else
+        		echo "Install Failed."
+        	fi
+    elif [[ $op == 2 ]];then
+    	gitlab-ctl stop
+    	rm -rf /opt/gitlab
+    	if [[ $distribution == "ubuntu" ]];then
+    		apt remove -y postfix --purge
+    		apt remove -y gitlab-ee --purge
+    		apt autoremove -y
+    	elif [[ $distribution == "redhat" ]];then
+    		yum autoremove -y postfix
+    		yum autoremove -y gitlab-ee
+    	fi
+    fi
+
+
+}
+
+install_dnsmasq() {
+	if [[ $distribution == "ubuntu" ]];then
+		apt update -y
+        apt install -y dnsmasq
+	elif [[ $distribution == "redhat" ]];then
+		yum install -y dnsmasq
+	fi
+}
+
 main() {
 	echo
-	echo "....... Environment Setup Script ......."
+	echo "..... Environment Setup Script ....."
 	echo
-	echo "--------- 1. Nginx Only ----------------"
+	echo "--------- 1. Nginx ----------------"
 	echo
-	echo "--------- 2. Mysql8.0 Only -------------"
+	echo "--------- 2. Mysql8.0 -------------"
 	echo
-	echo "--------- 3. Redis Only ----------------"
+	echo "--------- 3. Redis ----------------"
 	echo
-	echo "--------- 4. Supervisor Only -----------"
+	echo "--------- 4. Supervisor -----------"
 	echo
-	echo "--------- 5. Golang Only ---------------"
+	echo "--------- 5. Golang ---------------"
 	echo
-	echo "--------- 6. Let's Encrypt Only --------"
+	echo "--------- 6. Let's Encrypt --------"
 	echo
-	echo "--------- 7. Deploy Service ------------"
+	echo "--------- 7. Deploy Service -------"
 	echo
-	echo "--------- 8. Docker --------------------"
+	echo "--------- 8. Docker ---------------"
 	echo
-	echo "--------- 9. Jenkins -------------------"
+	echo "--------- 9. Jenkins --------------"
 	echo
-	echo "--------- 10. Postgres -----------------"
+	echo "--------- 10. Postgres ------------"
 	echo
-	read -p "Please choose(1-10): " choose
+	echo "--------- 11. GitLab --------------"
+	echo
+	echo "--------- 12. dnsmasq -------------"
+	echo
+	read -p "Please choose(1-12): " choose
 	echo
 	case $choose in
 	1)
@@ -692,6 +777,14 @@ main() {
 		;;
 	10)
 		install_postgres
+		exit 0
+		;;
+	11)
+		install_gitlab
+		exit 0
+		;;
+	12)
+		install_dnsmasq
 		exit 0
 		;;
 	q)
